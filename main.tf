@@ -1,3 +1,4 @@
+# VPC Setup
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
 }
@@ -205,4 +206,34 @@ resource "aws_lambda_permission" "allow_eventbridge" {
   function_name = aws_lambda_function.ec2_termination_report.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.ec2_state_change_rule.arn
+}
+
+# SNS Topic and Subscription for Alarm Notifications
+resource "aws_sns_topic" "ec2_alarm_topic" {
+  name = "ec2-instance-state-change-topic"
+}
+
+resource "aws_sns_topic_subscription" "ec2_alarm_subscription" {
+  topic_arn = aws_sns_topic.ec2_alarm_topic.arn
+  protocol  = "email"
+  endpoint  = "banunazreen73@gmail.com"  # Replace with actual email address
+}
+
+# CloudWatch Alarm to Monitor Instances Overnight
+resource "aws_cloudwatch_metric_alarm" "instance_running_overnight" {
+  alarm_name          = "InstanceRunningOvernightAlarm"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 3600            # Check every hour
+  statistic           = "Average"
+  threshold           = 1               # Triggers if usage is above 1%
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.ubuntu_asg.name
+  }
+
+  alarm_description = "Alarm if EC2 instance is running overnight."
+  alarm_actions     = [aws_sns_topic.ec2_alarm_topic.arn]
 }

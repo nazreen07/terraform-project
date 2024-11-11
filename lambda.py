@@ -7,7 +7,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 # Initialize AWS clients
 ses_client = boto3.client('ses')
 ce_client = boto3.client('ce')  # Cost Explorer client for billing information
-
 ec2_client = boto3.client('ec2')  # EC2 client to check instance uptime
 
 # Environment variable for the email recipients
@@ -35,17 +34,14 @@ def lambda_handler(event, context):
         body_html = generate_html_body(instance_id, event_time, 'N/A', 'Running')
         send_email("Running - EC2 Instance State Change Report", body_html)
         
-        # Check if the instance has been running for more than 12 hours
-        instance_launch_time = get_instance_launch_time(instance_id)
-        if instance_launch_time:
-            time_difference = datetime.datetime.utcnow() - instance_launch_time
-            if time_difference.total_seconds() > 43200:  # 12 hours in seconds
-                print(f"Instance {instance_id} has been running for more than 12 hours.")
-                body_html = generate_html_body(instance_id, event_time, 'N/A', 'Running over 12 hours')
-                send_email("Running Over 12 Hours - EC2 Instance Report", body_html)
     elif event_state == 'terminated':
-        # For terminated instances, create and send the email
-        body_html = generate_html_body(instance_id, event_time, 'N/A', 'Terminated')
+        # Get the last 24-hour billing data
+        end_date = datetime.date.today()
+        start_date = end_date - datetime.timedelta(days=1)
+        cost_data = get_billing_data(start_date, end_date)
+
+        # For terminated instances, create and send the email with billing data
+        body_html = generate_html_body(instance_id, event_time, cost_data, 'Terminated')
         send_email("Terminated - EC2 Instance State Change Report", body_html)
 
     return {
@@ -65,16 +61,19 @@ def get_instance_launch_time(instance_id):
 
 # Function to fetch billing data from AWS Cost Explorer
 def get_billing_data(start_date, end_date):
-    response = ce_client.get_cost_and_usage(
-        TimePeriod={'Start': str(start_date), 'End': str(end_date)},
-        Granularity='DAILY',
-        Metrics=['AmortizedCost']
-    )
-    total_cost = 0
-    for result in response['ResultsByTime']:
-        total_cost += float(result['Total']['AmortizedCost']['Amount'])
-
-    return total_cost
+    try:
+        response = ce_client.get_cost_and_usage(
+            TimePeriod={'Start': str(start_date), 'End': str(end_date)},
+            Granularity='DAILY',
+            Metrics=['AmortizedCost']
+        )
+        total_cost = 0
+        for result in response['ResultsByTime']:
+            total_cost += float(result['Total']['AmortizedCost']['Amount'])
+        return f"{total_cost:.2f}"  # Return as a formatted string
+    except (ClientError, BotoCoreError) as error:
+        print(f"Error retrieving billing data: {error}")
+        return "N/A"
 
 # Function to generate the HTML body for the email
 def generate_html_body(instance_id, event_time, cost_data, event_state):
@@ -95,20 +94,23 @@ def send_email(subject, body_html):
     sender_email = "nazreen_banu@outlook.com"
     recipient_emails = email_recipients
 
-    response = ses_client.send_email(
-        Source=sender_email,
-        Destination={
-            'ToAddresses': recipient_emails
-        },
-        Message={
-            'Subject': {
-                'Data': subject
+    try:
+        response = ses_client.send_email(
+            Source=sender_email,
+            Destination={
+                'ToAddresses': recipient_emails
             },
-            'Body': {
-                'Html': {
-                    'Data': body_html
+            Message={
+                'Subject': {
+                    'Data': subject
+                },
+                'Body': {
+                    'Html': {
+                        'Data': body_html
+                    }
                 }
             }
-        }
-    )
-    print(f"Email sent! Message ID: {response['MessageId']}")
+        )
+        print(f"Email sent! Message ID: {response['MessageId']}")
+    except (ClientError, BotoCoreError) as error:
+        print(f"Error sending email: {error}")
