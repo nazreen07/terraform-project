@@ -47,3 +47,38 @@ aws_cloudwatch_event_rule: Event rule that triggers on EC2 instance state change
 aws_cloudwatch_event_target: Directs the event rule to invoke the Lambda function.
 aws_lambda_permission: Grants EventBridge permission to trigger the Lambda function.
 This setup creates a scalable, automated infrastructure with VPC, subnets, auto-scaling EC2 instances, monitoring, and alerting with SNS notifications, along with a Lambda function for handling state-change events.
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+**Lambda Function Code for EC2 State Change and Billing Notifications**
+
+1. Imports and AWS Client Initialization:
+The function uses several libraries: json for JSON handling, boto3 for AWS service interactions, datetime for date and time operations, os for environment variables, and botocore.exceptions to manage AWS client errors.
+AWS clients are initialized for SES (email), Cost Explorer (billing), and EC2 (instance management).
+
+2. Environment Variable:
+The function reads the email_recipients environment variable to determine the list of email recipients for notifications.
+
+3. Lambda Handler (lambda_handler):
+This is the main function invoked by AWS Lambda upon an event trigger. It checks if the incoming event is an EC2 instance state-change notification (e.g., instance started or terminated).
+For both "running" and "terminated" states, it fetches the last 24 hours of billing data and constructs an HTML email report with details about the instance event and cost.
+It sends an email with the report, either indicating that an instance started running or was terminated.
+
+4. Billing Data Retrieval (get_billing_data):
+This helper function queries AWS Cost Explorer to obtain the total cost of services over the last 24 hours.
+It returns the cost as a formatted string for use in the email, handling any exceptions if billing data cannot be retrieved.
+
+5. HTML Email Body Generation (generate_html_body):
+This function generates an HTML-formatted body for the email, including details such as the instance ID, event state, timestamp, and the 24-hour billing summary.
+The formatted HTML structure is then included in the email content to make the report user-friendly and visually organized.
+
+6. Sending Email (send_email):
+This function uses AWS SES to send the email with the provided subject and HTML body to the specified recipients.
+The function includes error handling to capture any issues during email delivery and logs a message if an error occurs.
+This Lambda function provides a comprehensive solution for real-time monitoring and notifications of EC2 state changes, enhancing observability and cost-awareness by combining instance state monitoring with recent cost data.
+
+------------------------------------------------------------------------------------------------------------------------------------------
+
+userdata1.sh - has a small code running on Apache.
+
+
